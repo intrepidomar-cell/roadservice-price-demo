@@ -1,0 +1,5 @@
+streamlit>=1.40,<2
+psycopg[binary]>=3.2,<4
+pandas>=2.2,<3
+pdfplumber>=0.11.4,<0.13
+Pillow>=10,<13
