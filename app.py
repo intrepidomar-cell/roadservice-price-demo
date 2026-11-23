@@ -11,7 +11,7 @@ import pdfplumber
 import psycopg
 import streamlit as st
 
-from invoice_reader_l10 import leer_invoice
+from operation_reader import leer_invoice
 from extracted_items import extract_candidates
 from psycopg.rows import dict_row
 
