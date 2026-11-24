@@ -57,3 +57,31 @@ Create `readers/<format>.py` with `read(pdf, path) -> Invoice`. Add a unique sig
 - Service location is not treated as a verified physical vendor branch. No evidence of payment, no automatic historical inserts, and no estimates promoted into final invoices. Actual comparison requires validated matching invoice records and vendor/shop mapping in PostgreSQL; existing query/schema remain unchanged.
 - Initial coverage only: real multi-page invoices, different product/service types and tax/discount variants need validation. Pages without a repeated table heading are not guessed. Incomplete or discrepant monetary extraction blocks comparison.
 - Changed `core/invoice_router.py`, `invoice_display.py` (generic caption), `app.py` (price-basis caption includes normalized unit) and README. Added `readers/gwm.py` and `tests/test_gwm.py`. Other readers and SQL/pricing/storage files are byte-identical to V2. No dependency changes. Live Streamlit and Supabase were not tested.
+
+## Modular V4 — compact invoice presentation
+
+All supported readers share the same view for both uploaded and historical PDFs:
+1. **Document Information**, collapsed by default, contains metadata, reconciliation, reader warnings and any pending legacy rows.
+2. **Repair Details**, one bordered container with Complaint before charges; operations, tables and their associated subtotals remain together. Decisiv Parts Total and Operation Total are display-only rows, not comparison items. Legacy subtables are associated by explicit table/task ID.
+3. **Economic Summary**, a single separate container when printed summary data exists.
+
+Service comments and general case notes are no longer rendered; the reader results are retained unchanged. No changes to readers, normalized data, comparison logic, database, or dependencies. Tests simulate the Streamlit display contract (no running Streamlit server or Supabase connection required). Run `python -m pytest tests/` locally. To update V3, replace `app.py` and `invoice_display.py`; optionally copy `tests/test_invoice_display.py` and this README. Preserve `.git`, `.venv`, `.streamlit`, and credentials.
+
+
+## Modular V4.1 — independent collapsible sections
+
+All supported readers use the same three independent Streamlit expanders: Document Information (collapsed), Repair Details (expanded), and Economic Summary (expanded, only when summary data exists). No placeholder summary is created. The detail content, table order, and historical comparison behavior are unchanged from V4. To update V4, replace only `invoice_display.py` (tests and README optional).
+
+
+## Modular V4.2 — hide page provenance from visible tables
+
+Page, End page and legacy pagina columns are hidden in the shared display, including subtables and economic summaries. Operation captions retain only the operation code when present. Row order, the overall document page count, internal source page references and comparison data are unchanged. Replace only `invoice_display.py` to update V4.1; tests and README are optional.
+
+## Modular V4.3 — two digital invoice readers (no OCR)
+
+This release is based directly on V4.2, not on the withdrawn OCR experiment. Adds `readers/a_mobile_maintenance.py`, `readers/battleground_wrecker.py`, their explicit signatures in `core/invoice_router.py`, and `tests/test_mobile_and_battleground.py`. All existing readers, presentation, database queries, price calculation and dependencies remain unchanged.
+
+- A Mobile Maintenance: one actual digital invoice, five line items and four printed economic summary values. All four checks reconcile. The reader preserves printed truncated item codes and separates drive time from repair labor. It preserves service location separately from vendor address. Variable-length rows and wrapped descriptions tested synthetically; real additional products and multi-page layouts remain unvalidated. Only recognized single-quantity fees enter comparison candidates.
+- Battleground Wrecker: six actual digital invoices, 61 detail rows, all totals and row arithmetic reconciled. Includes two PDFs with signature-only second pages. The charge name and continuation details remain together, retaining distinct part codes even when charge labels repeat. Explicit codes with normalized EA and recognized single-quantity fees are eligible for matching. Uncoded parts, fluid products pending catalog mapping and labor without an explicit unit remain visible but not eligible. Requested date is not assumed to be invoice issue date. Service location does not establish a vendor branch. No proof of payment inferred. No generic Towbook reader or guesses about table continuations without repeated headers.
+- 22 automated synthetic tests passed; the 15 prior real digital samples produced identical complete normalized outputs compared with V4.2. The previously supplied scanned AMS Towing document remains unsupported. No corporate PDFs or extracted data included. Live Streamlit and Supabase were not tested, and no database writes or schema changes were made. Future historical data must use consistent code, vendor ID and unit conventions.
+- Upgrade from V4.2: copy the two new reader files and replace `core/invoice_router.py`; optionally copy the test and README. Alternatively merge the full ZIP into your repository, keeping `.git`, `.venv`, `.streamlit` and `.env`. No dependency updates needed. Do not commit confidential documents or secrets.

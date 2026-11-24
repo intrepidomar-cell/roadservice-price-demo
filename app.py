@@ -19,7 +19,7 @@ from storage_reader import download_private_pdf, verify_pdf_hash, StorageDocumen
 
 st.set_page_config(page_title='Road Service | Price Comparator', page_icon='🚚', layout='wide')
 st.title('Road Service | Price Comparator')
-st.caption('PROTOTYPE · SYNTHETIC DATA ONLY · MODULAR READERS V1')
+st.caption('PROTOTYPE · SYNTHETIC DATA ONLY · MODULAR READERS V4')
 
 MAX_PDF_BYTES = 15 * 1024 * 1024
 
@@ -109,7 +109,7 @@ def show_historical_pdf(row):
         st.markdown('**Historical PDF**')
         st.pdf(data, height=700)
     with table_col:
-        st.markdown('**Tables extracted from that PDF**')
+        st.markdown('**Extracted historical invoice**')
         show_extracted_tables(parsed)
 
 
@@ -154,20 +154,8 @@ with tab_work:
                 st.markdown('**Original PDF**')
                 st.pdf(pdf_bytes, height=720)
             with right:
-                st.markdown('**Extracted tables · Specialized reader**')
+                st.markdown('**Extracted invoice**')
                 show_extracted_tables(parsed)
-                with st.expander('Reader warnings and pending rows'):
-                    warnings = parsed.warnings
-                    if not warnings:
-                        st.caption('No reader warnings.')
-                    for warning in warnings:
-                        st.write(str(warning))
-                    if parsed.legacy_result:
-                        for field in ('pendientes_l10','pendientes_l09','sin_clasificar'):
-                            df=parsed.legacy_result.get(field)
-                            if isinstance(df,pd.DataFrame) and not df.empty:
-                                st.caption(field)
-                                st.dataframe(clean_frame(df),hide_index=True,use_container_width=True)
             st.divider()
             st.markdown('### Compare with historical prices')
             items = st.session_state.get('modular_items') or []
