@@ -77,7 +77,7 @@ def _operation_frame(op, items):
     if not columns:
         columns = ['Description', 'Totals']
     description = next((k for k in columns if k.casefold() == 'description'), None)
-    total = next((k for k in columns if k.casefold() in ('totals', 'total', 'ext amt', 'extension', 'amount')), None)
+    total = next((k for k in columns if k.casefold() in ('totals', 'total', 'ext amt', 'extension', 'amount', 'extd price')), None)
     if description is None:
         description = 'Description'; columns.append(description)
     if total is None:
@@ -131,9 +131,16 @@ def show_invoice_tables(doc):
         if doc.legacy_result is not None:
             _legacy_detail(doc.legacy_result)
         elif doc.operations:
+            previous_status = None
             for index, op in enumerate(doc.operations):
                 if index:
                     st.divider()
+                status = op.notes.get('status') if doc.reader == 'ocala_v1' else None
+                if status and status != previous_status:
+                    st.markdown(f'### {status} Operations')
+                    if status == 'Rejected':
+                        st.caption('Declined work — excluded from billed and estimated active totals.')
+                    previous_status = status
                 st.markdown(f'**{op.number}. {op.title}**' + (' — WARRANTY' if op.warranty else ''))
                 if op.code:
                     st.caption(f'Operation code: {op.code}')
@@ -141,6 +148,15 @@ def show_invoice_tables(doc):
                     _note(label.title(), op.notes.get(label))
                 items = [i for i in doc.items if i.operation == f'{op.number}. {op.title}']
                 _frame(_operation_frame(op, items))
+                if op.notes.get('economic breakdown'):
+                    st.caption(op.notes['economic breakdown'])
+            # Standalone charges not already present in the printed summary.
+            summary_labels = {k.casefold().strip() for k in doc.summary}
+            standalone = [i for i in doc.items if not i.operation and (doc.reader == 'gregorys_v1' or i.description.casefold().strip() not in summary_labels)]
+            if standalone:
+                st.divider()
+                st.markdown('**Additional charges**')
+                _frame(pd.DataFrame(_rows(standalone)))
         elif doc.items:
             _frame(pd.DataFrame(_rows(doc.items)))
         else:
@@ -149,6 +165,11 @@ def show_invoice_tables(doc):
     # Keep the original L10 summary data; page columns are hidden by _frame.
     if doc.legacy_result is not None:
         summary = (doc.legacy_result.get('resumen_final') or {}).get('datos')
+    elif doc.reader == 'ocala_v1':
+        labels = dict.fromkeys(k.split(' — ', 1)[-1] for k in doc.summary)
+        summary = pd.DataFrame([{'Concept': k, 'Estimated': _display(doc.summary.get('Estimated — ' + k)),
+                                 'Billed': _display(doc.summary.get('Billed — ' + k)),
+                                 'Total / additional': _display(doc.summary.get(k))} for k in labels])
     else:
         summary = pd.DataFrame([{'Concept': k, 'Amount (USD)': f'${v:,.2f}'}
                                 for k, v in doc.summary.items()])

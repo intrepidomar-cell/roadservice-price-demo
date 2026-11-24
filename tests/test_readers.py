@@ -101,5 +101,5 @@ def test_fleetperform_compat(tmp_path):
     for x,t in zip((20,50,110,260,310,365,490),('Type','Labor/Part','Description','Hrs/Qty','UOM','Rate/Price','Ext Amt')):c.drawString(x,700,t)
     for x,t in zip((20,50,110,260,310,365,490),('P','TEST123','Synthetic part','2.00','EA','5.00','10.00')):c.drawString(x,680,t)
     c.save();d=read_invoice(f)
-    assert d.reader=='fleetperform_compat_l10'
+    assert d.reader=='fleetperform_v1'
     assert d.items and any(i.amount==10 for i in d.items)

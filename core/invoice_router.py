@@ -10,12 +10,15 @@ from core.models import Invoice
 # Format identification is centralized and independent of extraction.
 # Add one signature and module path when a new layout is validated.
 SIGNATURES = {
+    'readers.gregorys': (r"GREGORY.S TRAILER AND", r"TRUCK SERVICE", r"Item\s+Description\s+Quantity\s+Rate\s+Amount"),
+    'readers.ocala': (r"OCALA FREIGHTLINER", r"SERVICE (?:ORDER|INVOICE):", r"Sold Operations|Estimate Operations|Rejected Operations"),
     'readers.a_mobile_maintenance': (r'A Mobile Maintenance', r'Invoice\s*#', r'Quantity\s+Item Code\s+Description\s+Price Each\s+Amount'),
     'readers.battleground_wrecker': (r'Battleground Wrecker', r'Invoice\s*#', r'Charge Description\s+Quantity\s+Price\s+Line Total'),
     'readers.gwm': (r'GWM Commercial Auto Glass', r'Invoice\s*#\s*\d+', r'Product/Service\s+Description\s+Qty\.\s+Unit Price\s+Total'),
     'readers.loves': (r'TOTAL TRUCK CARE', r'Love.s Travel Stops'),
     'readers.decisiv': (r'ESTIMATE VERSION\s+\d+', r'Complaint\s*:', r'Freightliner Northwest|Gordon Truck Centers'),
-    'readers.fleetperform': (r'fleet\s*perform', r'Hrs\s*/\s*Qty'),
+    'readers.fleet_repair_solutions': (r'Fleet Repair Solutions\s*-', r'Item\s+Description\s+Quantity\s+Rate\s+Amount', r'Concern:'),
+    'readers.fleetperform': (r'Hrs\s*/\s*Qty', r'Labor/Part', r'(?:fleet\s*perform|FLEET REPAIR SOLNS-|Position Codes\s+UOM)'),
 }
 MAX_PDF_BYTES=15*1024*1024
 MAX_PAGES=25
