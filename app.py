@@ -1,5 +1,5 @@
 """Road Service — simple PDF reading and same-vendor invoice comparison.
-Synthetic demonstration data only. No real C.R. England invoices on this host. PRUEBA GIT
+Synthetic demonstration data only. No real C.R. England invoices on this host. 
 """
 import hashlib
 import tempfile
@@ -7,143 +7,21 @@ from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
-import pdfplumber
 import psycopg
 import streamlit as st
 
-from operation_reader import leer_invoice
+from core.invoice_router import read_invoice
+from invoice_display import show_invoice_tables
 from extracted_items import extract_candidates
-from psycopg.rows import dict_row
-
-# DB query functions are embedded in this file to avoid module-version mismatches.
-# The historical SQL remains parameterized and read-only.
-def query(database_url: str, sql: str, args=()):
-    with psycopg.connect(
-        database_url, sslmode="require", connect_timeout=10, prepare_threshold=None
-    ) as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(sql, args)
-            return cur.fetchall()
-
-
-def shops(database_url: str):
-    return query(database_url, """
-        SELECT s.shop_id, s.shop_code, s.shop_name, s.city, s.state_code,
-               v.vendor_id, v.vendor_name
-        FROM roadservice_demo.shops s
-        JOIN roadservice_demo.vendors v ON v.vendor_id = s.vendor_id
-        ORDER BY v.vendor_name, s.city, s.state_code
-    """)
-
-
-def shops_with_prices_for_item(database_url: str, item: dict):
-    """Return only vendor locations with validated historical matches for this item.
-
-    The WHERE rules mirror historical_prices() so selecting a vendor/location
-    never leads to an empty result just because the shop has no comparable item.
-    """
-    import re
-    category = item.get('category')
-    if category not in ('Parts', 'Labor', 'Misc'):
-        return []
-    sql = """
-        SELECT s.shop_id, s.shop_code, s.shop_name, s.city, s.state_code,
-               v.vendor_id, v.vendor_name, COUNT(*)::integer AS match_count
-        FROM roadservice_demo.line_items li
-        JOIN roadservice_demo.documents d ON d.document_id = li.document_id
-        JOIN roadservice_demo.shops s ON s.shop_id = d.shop_id
-        JOIN roadservice_demo.vendors v ON v.vendor_id = s.vendor_id
-        WHERE d.document_type = 'invoice'
-          AND d.validation_status = 'validated'
-          AND d.currency_code = 'USD'
-          AND li.category = %s
-    """
-    args = [category]
-    if category == 'Misc':
-        normalized = re.sub(r'[^A-Z0-9]', '', (item.get('description') or '').upper())
-        if not normalized or item.get('amount') is None:
-            return []
-        sql += """
-          AND UPPER(REGEXP_REPLACE(li.description_original, '[^A-Za-z0-9]', '', 'g')) = %s
-        """
-        args.append(normalized)
-    else:
-        code = (item.get('code') or '').strip().upper()
-        unit = (item.get('unit') or '').strip().upper()
-        if not code or not unit or item.get('unit_price') is None:
-            return []
-        sql += """
-          AND UPPER(TRIM(li.item_code)) = %s
-          AND UPPER(TRIM(li.unit_of_measure)) = %s
-        """
-        args.extend([code, unit])
-    sql += """
-        GROUP BY s.shop_id, s.shop_code, s.shop_name, s.city, s.state_code,
-                 v.vendor_id, v.vendor_name
-        ORDER BY v.vendor_name, s.city, s.state_code
-    """
-    return query(database_url, sql, tuple(args))
-
-
-def historical_prices(database_url: str, vendor_id: int, selected_shop_ids: list[int], item: dict):
-    """Find same-vendor historical invoice lines matching a particular parsed item.
-
-    Parts and Labor require exact code and UOM. Misc charge rows (e.g. SHOP SUPPLIES)
-    lack a code in the source PDF; use exact normalized category+description and
-    compare printed line amounts. No fuzzy matching or cross-vendor fallback.
-    """
-    if not selected_shop_ids or not item.get('category') in ('Parts', 'Labor', 'Misc'):
-        return []
-    common = """
-        SELECT d.document_id, d.document_number, d.issued_on,
-               d.original_pdf_url, d.original_file_sha256,
-               s.shop_id, s.shop_name, s.city, s.state_code,
-               v.vendor_name, li.category, li.item_code,
-               li.description_original, li.quantity, li.unit_of_measure,
-               li.unit_price, li.line_amount, li.line_number
-        FROM roadservice_demo.line_items li
-        JOIN roadservice_demo.documents d ON d.document_id = li.document_id
-        JOIN roadservice_demo.shops s ON s.shop_id = d.shop_id
-        JOIN roadservice_demo.vendors v ON v.vendor_id = s.vendor_id
-        WHERE v.vendor_id = %s
-          AND s.shop_id = ANY(%s::bigint[])
-          AND d.document_type = 'invoice'
-          AND d.validation_status = 'validated'
-          AND d.currency_code = 'USD'
-          AND li.category = %s
-    """
-    args = [vendor_id, selected_shop_ids, item['category']]
-    if item['category'] == 'Misc':
-        # The PDF typically has no part code for fees. Avoid invented codes.
-        # Exact normalised-description matching, not a substring fuzzy match.
-        import re
-        description = re.sub(r'[^A-Z0-9]', '', (item.get('description') or '').upper())
-        if not description or item.get('amount') is None:
-            return []
-        common += """
-          AND UPPER(REGEXP_REPLACE(li.description_original, '[^A-Za-z0-9]', '', 'g')) = %s
-        """
-        args.append(description)
-        common += ' ORDER BY li.line_amount DESC, d.issued_on DESC, d.document_number DESC'
-    else:
-        code, unit = (item.get('code') or '').strip().upper(), (item.get('unit') or '').strip().upper()
-        if not code or not unit or item.get('unit_price') is None:
-            return []
-        common += """
-          AND UPPER(TRIM(li.item_code)) = %s
-          AND UPPER(TRIM(li.unit_of_measure)) = %s
-        """
-        args.extend((code, unit))
-        common += ' ORDER BY li.unit_price DESC, d.issued_on DESC, d.document_number DESC'
-    return query(database_url, common, tuple(args))
+from roadservice_db import shops_with_prices_for_item, historical_prices
+from pricing import summarize_prices
 from storage_reader import download_private_pdf, verify_pdf_hash, StorageDocumentError
 
 st.set_page_config(page_title='Road Service | Price Comparator', page_icon='🚚', layout='wide')
 st.title('Road Service | Price Comparator')
-st.caption('PROTOTYPE · SYNTHETIC DATA ONLY · LABORATORY 10')
+st.caption('PROTOTYPE · SYNTHETIC DATA ONLY · MODULAR READERS V1')
 
 MAX_PDF_BYTES = 15 * 1024 * 1024
-MAX_PAGES = 25
 
 
 def clean_frame(frame):
@@ -170,41 +48,19 @@ def get_storage_config():
         return None, None
 
 
-def run_l10(pdf_bytes):
+def run_reader(pdf_bytes):
     if len(pdf_bytes) > MAX_PDF_BYTES:
         raise ValueError('PDF exceeds the 15 MB demo limit.')
     if not pdf_bytes.startswith(b'%PDF-'):
         raise ValueError('The uploaded file does not have a PDF header.')
-    with tempfile.TemporaryDirectory(prefix='roadservice_l10_') as folder:
+    with tempfile.TemporaryDirectory(prefix='roadservice_modular_') as folder:
         local_path = Path(folder) / 'invoice.pdf'
         local_path.write_bytes(pdf_bytes)
-        with pdfplumber.open(local_path) as pdf:
-            if len(pdf.pages) > MAX_PAGES:
-                raise ValueError(f'PDF exceeds {MAX_PAGES} pages.')
-        return leer_invoice(str(local_path))
+        return read_invoice(local_path)
 
 
-def show_l10_tables(result):
-    tables = result.get('tablas') or []
-    if not tables:
-        st.warning('No main table detected by the reader.')
-    for i, table in enumerate(tables, 1):
-        st.caption(f'Table {i} — {table.get("titulo") or "Line items"}')
-        st.dataframe(clean_frame(table.get('datos')), hide_index=True,
-                     use_container_width=True, height=260)
-    for i, table in enumerate(result.get('subtablas') or [], 1):
-        st.caption(f'Economic subtable {i}')
-        st.dataframe(clean_frame(table.get('datos')), hide_index=True,
-                     use_container_width=True, height=160)
-    for i, table in enumerate(result.get('cargos_adicionales') or [], 1):
-        st.caption(f'Other charges {i}')
-        st.dataframe(clean_frame(table.get('datos')), hide_index=True,
-                     use_container_width=True, height=140)
-    summary = result.get('resumen_final') or {}
-    if isinstance(summary.get('datos'), pd.DataFrame):
-        st.markdown('**Economic summary**')
-        st.dataframe(clean_frame(summary['datos']), hide_index=True,
-                     use_container_width=True, height=210)
+def show_extracted_tables(result):
+    show_invoice_tables(result)
 
 
 def show_historical_pdf(row):
@@ -225,7 +81,10 @@ def show_historical_pdf(row):
         try:
             with st.spinner('Loading invoice and checking its extracted tables...'):
                 data = download_private_pdf(locator, url, secret)
-                parsed = run_l10(data)
+                verified, _ = verify_pdf_hash(data, row.get('original_file_sha256'))
+                if verified is False:
+                    raise StorageDocumentError('Historical PDF fingerprint mismatch.')
+                parsed = run_reader(data)
             st.session_state['pdf_history_bytes'] = data
             st.session_state['pdf_history_parsed'] = parsed
         except (StorageDocumentError, ValueError) as error:
@@ -250,8 +109,8 @@ def show_historical_pdf(row):
         st.markdown('**Historical PDF**')
         st.pdf(data, height=700)
     with table_col:
-        st.markdown('**Tables extracted from that PDF — Lab 10**')
-        show_l10_tables(parsed)
+        st.markdown('**Tables extracted from that PDF**')
+        show_extracted_tables(parsed)
 
 
 def item_label(item):
@@ -265,29 +124,29 @@ tab_work, tab_global = st.tabs(['1. Invoice & Comparison', '2. Global Comparison
 with tab_work:
     uploaded = st.file_uploader('Upload invoice (synthetic PDF)', type=['pdf'])
     if uploaded is None:
-        for key in ('l10_result', 'l10_items', 'l10_hash', 'pdf_history_key',
+        for key in ('modular_result', 'modular_items', 'modular_hash', 'pdf_history_key',
                     'pdf_history_bytes', 'pdf_history_parsed'):
             st.session_state.pop(key, None)
-        st.info('Upload a PDF to see the original document and the tables extracted by Laboratory 10.')
+        st.info('Upload a PDF to see the original document and the tables extracted by a specialized reader.')
     else:
         pdf_bytes = uploaded.getvalue()
         pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
-        if st.session_state.get('l10_hash') != pdf_hash:
-            st.session_state['l10_hash'] = pdf_hash
-            st.session_state.pop('l10_result', None)
-            st.session_state.pop('l10_items', None)
+        if st.session_state.get('modular_hash') != pdf_hash:
+            st.session_state['modular_hash'] = pdf_hash
+            st.session_state.pop('modular_result', None)
+            st.session_state.pop('modular_items', None)
             st.session_state.pop('historical_open_id', None)
             try:
-                with st.spinner('Reading invoice with Laboratory 10...'):
-                    parsed = run_l10(pdf_bytes)
+                with st.spinner('Identifying format and extracting invoice...'):
+                    parsed = run_reader(pdf_bytes)
                     items = extract_candidates(parsed)
-                st.session_state['l10_result'] = parsed
-                st.session_state['l10_items'] = items
+                st.session_state['modular_result'] = parsed
+                st.session_state['modular_items'] = items
             except ValueError as error:
                 st.error(str(error))
             except Exception as error:
                 st.error(f'Unable to read this digital PDF ({type(error).__name__}).')
-        parsed = st.session_state.get('l10_result')
+        parsed = st.session_state.get('modular_result')
         if parsed:
             st.markdown('### Uploaded invoice')
             left, right = st.columns([0.9, 1.1], gap='medium')
@@ -295,36 +154,37 @@ with tab_work:
                 st.markdown('**Original PDF**')
                 st.pdf(pdf_bytes, height=720)
             with right:
-                st.markdown('**Extracted tables · Laboratory 10**')
-                show_l10_tables(parsed)
+                st.markdown('**Extracted tables · Specialized reader**')
+                show_extracted_tables(parsed)
                 with st.expander('Reader warnings and pending rows'):
-                    warnings = parsed.get('avisos') or []
+                    warnings = parsed.warnings
                     if not warnings:
                         st.caption('No reader warnings.')
                     for warning in warnings:
                         st.write(str(warning))
-                    for field in ('pendientes_l10', 'pendientes_l09', 'sin_clasificar'):
-                        df = parsed.get(field)
-                        if isinstance(df, pd.DataFrame) and not df.empty:
-                            st.caption(field)
-                            st.dataframe(clean_frame(df), hide_index=True, use_container_width=True)
+                    if parsed.legacy_result:
+                        for field in ('pendientes_l10','pendientes_l09','sin_clasificar'):
+                            df=parsed.legacy_result.get(field)
+                            if isinstance(df,pd.DataFrame) and not df.empty:
+                                st.caption(field)
+                                st.dataframe(clean_frame(df),hide_index=True,use_container_width=True)
             st.divider()
             st.markdown('### Compare with historical prices')
-            items = st.session_state.get('l10_items') or []
+            items = st.session_state.get('modular_items') or []
             items = [i for i in items if i.get('category') in ('Parts', 'Labor', 'Misc') and
                      (i.get('amount') is not None if i.get('category') == 'Misc' else i.get('unit_price') is not None)]
             if not items:
-                st.info('No priced items were extracted from this PDF.')
+                st.info('No eligible comparison items. Printed data remains visible above.')
             else:
                 item_index = st.selectbox('What do you want to compare?',
                                           range(len(items)), format_func=lambda i: item_label(items[i]))
                 chosen_item = items[item_index]
-                if not chosen_item.get('amount_consistent'):
+                if chosen_item.get('amount_consistent') is False:
                     st.warning('This extracted item needs verification against the original PDF.')
                 current = (chosen_item.get('amount') if chosen_item['category'] == 'Misc'
                            else chosen_item.get('unit_price'))
-                st.caption(f'Price in uploaded invoice: {money(current)} · '
-                           + ('Charge total' if chosen_item['category'] == 'Misc' else 'Unit price / hourly rate'))
+                st.caption(f'Price in uploaded {parsed.document_type if parsed.document_type != "unknown" else "document"}: {money(current)} · '
+                           + ('Charge total' if chosen_item['category'] == 'Misc' else f"Unit price ({chosen_item.get('unit') or 'unit not specified'})"))
                 database_url = get_database_url()
                 if not database_url:
                     st.warning('DATABASE_URL is not configured in Streamlit Secrets.')
@@ -332,14 +192,20 @@ with tab_work:
                     try:
                         # Only show vendors and shops with an actual comparable historical line.
                         available = shops_with_prices_for_item(database_url, chosen_item)
+                        # Never silently compare with an unrelated vendor.
+                        import re
+                        def norm_vendor(value):
+                            return re.sub(r'[^a-z0-9]','',value.lower())
+                        source=norm_vendor(parsed.vendor)
+                        aliases={'lovesspeedco':('loves','speedco'), 'fleetperform':('fleetperform',)}
+                        known=aliases.get(source,(source,) if source else ())
+                        available=[v for v in available if any(k in norm_vendor(v['vendor_name']) for k in known)]
                         vendor_list = sorted({(s['vendor_id'], s['vendor_name']) for s in available},
                                              key=lambda v: v[1].lower())
                         if not vendor_list:
                             st.info('No comparable historical prices were found for this item.')
                         else:
-                            is_fleetperform = uploaded.name.upper().startswith('FP-DEMO-') or '892410' in uploaded.name
-                            default_vendor = next((i for i, (_, name) in enumerate(vendor_list)
-                                                   if 'fleetperform' in name.lower()), 0) if is_fleetperform else 0
+                            default_vendor = 0
                             # Keep both selectors visible even when the demo currently has
                             # only one vendor or shop. This is necessary for multi-shop
                             # vendors such as Love's when their history is added later.
@@ -386,13 +252,14 @@ with tab_work:
                                         'Shop': row['shop_name'],
                                     } for row, value in zip(matches, values)]
                                     st.caption(f'{len(matches)} historical records · Highest to lowest · '
-                                               + ('Charge total' if is_fee else 'Unit price / hourly rate'))
+                                               + ('Charge total' if is_fee else f"Unit price ({chosen_item.get('unit') or 'unit not specified'})"))
                                     st.dataframe(pd.DataFrame(rows_display), hide_index=True, use_container_width=True)
                                     st.markdown('**Price summary**')
                                     c1, c2, c3 = st.columns(3)
-                                    c1.metric('Average', money(sum(values) / len(values)))
-                                    c2.metric('Lowest', money(min(values)))
-                                    c3.metric('Highest', money(max(values)))
+                                    stats=summarize_prices(current, values)
+                                    c1.metric('Average', money(stats['average']))
+                                    c2.metric('Lowest', money(stats['minimum']))
+                                    c3.metric('Highest', money(stats['maximum']))
                                     with st.expander('View historical invoice PDF'):
                                         unique_docs = {int(r['document_id']): r for r in matches}
                                         doc_ids = list(unique_docs)

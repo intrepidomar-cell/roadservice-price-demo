@@ -1,10 +1,6 @@
-"""Read-only SQL queries used by the demo. All comparisons are restricted to
-one vendor and to its selected shop IDs. The global comparison is not enabled.
-"""
-from __future__ import annotations
+"""Parameterized read-only historical queries."""
 import psycopg
 from psycopg.rows import dict_row
-
 
 def query(database_url: str, sql: str, args=()):
     with psycopg.connect(
@@ -23,6 +19,57 @@ def shops(database_url: str):
         JOIN roadservice_demo.vendors v ON v.vendor_id = s.vendor_id
         ORDER BY v.vendor_name, s.city, s.state_code
     """)
+
+
+def shops_with_prices_for_item(database_url: str, item: dict):
+    """Return only vendor locations with validated historical matches for this item.
+
+    The WHERE rules mirror historical_prices() so selecting a vendor/location
+    never leads to an empty result just because the shop has no comparable item.
+    """
+    import re
+    category = item.get('category')
+    if category not in ('Parts', 'Labor', 'Misc'):
+        return []
+    sql = """
+        SELECT s.shop_id, s.shop_code, s.shop_name, s.city, s.state_code,
+               v.vendor_id, v.vendor_name, COUNT(*)::integer AS match_count
+        FROM roadservice_demo.line_items li
+        JOIN roadservice_demo.documents d ON d.document_id = li.document_id
+        JOIN roadservice_demo.shops s ON s.shop_id = d.shop_id
+        JOIN roadservice_demo.vendors v ON v.vendor_id = s.vendor_id
+        WHERE d.document_type = 'invoice'
+          AND d.validation_status = 'validated'
+          AND d.currency_code = 'USD'
+          AND li.category = %s
+    """
+    args = [category]
+    if category == 'Misc':
+        normalized = re.sub(r'[^A-Z0-9]', '', (item.get('description') or '').upper())
+        if not normalized or item.get('amount') is None:
+            return []
+        sql += """
+          AND li.line_amount > 0
+          AND UPPER(REGEXP_REPLACE(li.description_original, '[^A-Za-z0-9]', '', 'g')) = %s
+        """
+        args.append(normalized)
+    else:
+        code = (item.get('code') or '').strip().upper()
+        unit = (item.get('unit') or '').strip().upper()
+        if not code or not unit or item.get('unit_price') is None:
+            return []
+        sql += """
+          AND li.unit_price > 0
+          AND UPPER(TRIM(li.item_code)) = %s
+          AND UPPER(TRIM(li.unit_of_measure)) = %s
+        """
+        args.extend([code, unit])
+    sql += """
+        GROUP BY s.shop_id, s.shop_code, s.shop_name, s.city, s.state_code,
+                 v.vendor_id, v.vendor_name
+        ORDER BY v.vendor_name, s.city, s.state_code
+    """
+    return query(database_url, sql, tuple(args))
 
 
 def historical_prices(database_url: str, vendor_id: int, selected_shop_ids: list[int], item: dict):
@@ -61,6 +108,7 @@ def historical_prices(database_url: str, vendor_id: int, selected_shop_ids: list
         if not description or item.get('amount') is None:
             return []
         common += """
+          AND li.line_amount > 0
           AND UPPER(REGEXP_REPLACE(li.description_original, '[^A-Za-z0-9]', '', 'g')) = %s
         """
         args.append(description)
@@ -70,6 +118,7 @@ def historical_prices(database_url: str, vendor_id: int, selected_shop_ids: list
         if not code or not unit or item.get('unit_price') is None:
             return []
         common += """
+          AND li.unit_price > 0
           AND UPPER(TRIM(li.item_code)) = %s
           AND UPPER(TRIM(li.unit_of_measure)) = %s
         """

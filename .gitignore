@@ -5,3 +5,10 @@ venv/
 __pycache__/
 .pytest_cache/
 .DS_Store
+
+# Confidential documents and local validation data; never commit PDFs.
+*.pdf
+*.PDF
+private_samples/
+local_data/
+.backup*/

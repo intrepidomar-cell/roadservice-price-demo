@@ -1,45 +1,59 @@
-# C.R. England — Comparador sencillo (demostración con PDFs sintéticos)
+# Road Service — Modular Readers V3
 
-## Qué cambia
+Prototype for local PDF extraction and read-only same-vendor historical comparison. Public/cloud demo: **synthetic data only**. This archive contains source code and tests with fictitious data, not the uploaded work orders or their extracted contents.
 
-- **Dos pestañas:** `1. Invoice & Comparison` (carga + lector L10 + consulta histórica) y `2. Global Comparison` (pendiente).
-- Se conserva el visor del PDF nuevo a la izquierda y las **tablas reales que extrae Laboratorio 10** a la derecha.
-- Se elimina la tabla desplegable `Comparison candidates & validation notes`.
-- `Reader warnings and pending rows` queda disponible bajo un desplegable, para revisar anomalías cuando haga falta.
-- Debajo puedes escoger **una partida** del PDF (Parts, Labor o Misc, todo en una lista), un proveedor y **todas sus sucursales** o **solo las sucursales escogidas**.
-- Verás **una sola tabla** de precios históricos, **ordenada de mayor a menor**, y tres tarjetas: promedio, precio más barato, precio más caro.
-- Al final hay un bloque opcional `View historical invoice PDF`, para consultar **solo el PDF que selecciones**, junto a su extracción L10. El historial de precios no se reprocesa en cada consulta.
+## Architecture
 
-## Cómo actualizar GitHub
+- `app.py`: Streamlit UI; opens the current PDF, displays original and extraction, then queries historical prices. Global Comparison remains pending.
+- `core/invoice_router.py`: cheap signatures from the first two pages; imports only the selected reader. Unsupported/ambiguous formats stop without fallback. Do not route by filename.
+- `core/models.py`: shared `Invoice` and `LineItem` contracts, nullable values, source columns, warnings, code candidates and comparison eligibility.
+- `core/pdf_utils.py`, `core/validation.py`: small generic functions. No vendor-specific branching.
+- `readers/loves.py`: specialized Love's / Speedco Total Truck Care estimate layout (eight printed columns). Source values, metadata, notes, tire details, discounts, summary and reconciliation. Distinguishes printed zero from blank. No automatic hourly-unit conversion or authoritative part code inference. Parts/Labor code candidates require review before historical matching. Positive miscellaneous charges are eligible if totals reconcile, subject to vendor/history availability.
+- `readers/decisiv.py`: independent coordinate-based reader for Freightliner Northwest / Gordon Truck Centers estimates. Returns the normalized model directly, preserves operations, warranty, part codes where printed, quantities, printed prices and amounts, operation totals, summary components and case notes. Uses letter-size digital layout; other variants require validation.
+- `readers/gwm.py`: GWM Commercial Auto Glass digital invoice layout, five printed columns. Preserves service date, product/service label, description, prices, non-taxable marks and source identity.
+- `readers/fleetperform.py`: explicit compatibility route for FleetPerform name + Hrs/Qty heading; temporarily calls the previous L10 code. No generic fallback. Needs a dedicated reader and regression tests using representative documents before removing L10.
+- `legacy/`: transitional source and adapters; not executed for Love's. `core/legacy_adapter.py` bridges previous results.
+- `invoice_display.py`, `extracted_items.py`: display and eligible comparison items.
+- `roadservice_db.py`, `pricing.py`, `storage_reader.py`: SQL reads, statistics and PDF viewer; schema unchanged. Historical PDF is re-extracted only on explicit open; historical prices are queried from SQL. Existing `reconciliation.py` is retained as an optional development utility, not called during normal extraction.
+- `tests/`: synthetic regression tests; not loaded by Streamlit.
 
-1. Conserva una versión anterior de los archivos (commit o rama de respaldo).
-2. En el repositorio `intrepidomar-cell/roadservice-price-demo`, sustituye **solo** `app.py` y `roadservice_db.py` por los de esta actualización. Sube el archivo real, no su nombre escrito como texto.
-3. Haz **Commit changes**. Streamlit Community Cloud tomará el nuevo código del repositorio automáticamente.
-4. Conserva los demás módulos de la versión anterior (incluidos `invoice_reader_l10.py`, `extracted_items.py` y `storage_reader.py`). Si no tienes todos, usa el ZIP completo, que los contiene.
-5. **No hace falta modificar Supabase ni volver a ejecutar scripts SQL.** Mantén `DATABASE_URL` y, para abrir PDFs históricos, los Secrets privados `SUPABASE_URL` y `SUPABASE_SECRET_KEY`. Nunca incluyas credenciales en GitHub o en una captura.
+## Install locally (Windows / VS Code)
 
-## Prueba esperada con el PDF de referencia
+1. Commit the current working version in Git (without any confidential PDFs or secrets). Create a branch, e.g. `git switch -c modular-readers-v3`.
+2. Extract the ZIP. Copy its contents into your existing repository, merging folders and replacing matching files. Keep `.git/`, `.venv/`, `.streamlit/secrets.toml` and `.env` intact. Do not copy actual PDFs into Git. No SQL migration is required.
+3. Once the new version has been copied, remove these **obsolete root files** if present: `operation_reader.py`, `invoice_reader_l10.py` (now in `legacy/`), `fix_duplicate_display.py`, `test_lectura_sintetica.py`, `INSTRUCCIONES.md`. Old README and validator are replaced. Do not remove the `legacy/` folder yet.
+4. If dependencies need updating: `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`.
+5. Start: `.\.venv\Scripts\python.exe -m streamlit run app.py`.
+6. For authorized local documents only, upload the PDFs in the local app. Public Streamlit Cloud remains synthetic-only. Local execution alone does not authorize handling corporate data; follow IT requirements.
+7. Regression tests: `.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt` then `.\.venv\Scripts\python.exe -m pytest -q tests`.
+8. Batch validation without Streamlit or Supabase: `.\.venv\Scripts\python.exe validar_estimates.py "C:\path\to\authorized\PDFs"`.
+9. Review `git status`, `git diff` and staged files. Push only code/synthetic tests after validation. Do not push real PDFs, extracted data, or secrets. `.gitignore` does not protect files already tracked; remove such files from tracking through an approved process.
 
-- Carga `Estimate 892410.pdf` en un entorno autorizado de pruebas **solamente si el tratamiento de ese documento está aprobado**; por ahora usa un PDF sintético equivalente para Streamlit Community Cloud.
-- El Laboratorio 10 reconoce el concepto `SHOP SUPPLIES` con importe `$32.41` en el archivo de referencia. Ese valor se usa solo como comprobación del lector, no como registro histórico SQL.
-- Selecciona la partida `SHOP SUPPLIES` en `What do you want to compare?`.
-- Selecciona el proveedor `FleetPerform-style Synthetic Demo`.
-- En `Locations`, selecciona `All locations of this vendor`.
-- El SQL de demostración actualmente contiene **una única ubicación** para FleetPerform sintético: Fort Lupton, CO. Por lo tanto, `All locations` y `Choose locations` producirán los mismos resultados hasta que existan más sucursales de ese proveedor.
-- Deben aparecer **20 precios históricos** de Shop Supplies, ordenados de mayor a menor. Promedio **$35.18**, mínimo **$27.10**, máximo **$42.33**.
-- Si quieres, despliega `View historical invoice PDF`, escoge un invoice y presiona `Open PDF and extracted tables`. Esto requiere que los PDFs estén en el bucket privado de Storage y sus rutas enlazadas en PostgreSQL.
+## Scope and limitations
 
-## Lógica de coincidencias
+- Three provided Love's/Speedco estimates were inspected and parsed locally. All 17 line items (including two with no printed amounts) and three printed totals were recovered and reconciled. This establishes coverage for these samples, not every Love's format or final invoice. Final invoice status is not inferred from a missing estimate marker.
+- Six automated tests with generated synthetic PDFs pass in the development environment. Actual Streamlit rendering and live Supabase queries were not executed in that environment; local app integration and historic seed matching must still be checked. Existing dependency constraints were retained.
+- No OCR. A new format needs an independent reader, a signature and regression fixtures. Current Love's parser is validated on the observed eight-column layout, including tables starting on page 2; continuation across pages without a repeated table header and other revisions need samples.
+- No automatic storage or database ingestion. Private Storage remains limited to the existing synthetic FleetPerform bucket/paths. Vendor-name matching is provisional; map corporate vendor IDs and approve historical data before production use. Fee comparisons use printed totals, not equivalent per-unit rates. Zero-valued estimates do not enter comparisons.
+- Historical extraction of previously stored PDFs is on demand only; no batch reprocessing on every price query.
 
-- **Parts y Labor**: misma categoría, código y unidad, dentro del proveedor y las sedes seleccionadas. Labor se compara por tarifa, no automáticamente por horas totales.
-- **Misc**: mismo texto de concepto normalizado y categoría. En `SHOP SUPPLIES`, que no trae código en el PDF, se compara el **importe del cargo**. No se hace búsqueda difusa ni se inventan equivalencias.
-- Solo se incluyen invoices finales validados, en USD. El nuevo PDF **no se guarda automáticamente** en PostgreSQL ni Storage.
-- Para ampliar el historial a más sucursales hace falta registrar esas sucursales y sus líneas económicas en la base; seleccionar `All locations` **no crea datos inexistentes**.
+## Add a reader
 
-## Seguridad y estado
+Create `readers/<format>.py` with `read(pdf, path) -> Invoice`. Add a unique signature in `core/invoice_router.py` and a synthetic test. Reuse shared primitives, but do not alter other readers to handle the new format. Use an existing reader only when the layout and extraction semantics are practically identical. If a new reader needs many special-case branches, split it into a distinct reader. Never infer missing monetary values or payment status.
 
-Este es un prototipo **exclusivamente sintético**. No cargues documentos internos reales en Streamlit Community Cloud ni en un servicio externo sin aprobación de IT. El proyecto no tiene aún controles corporativos de acceso, roles mínimos ni flujo autorizado de ingestión automática.
+## V2 — Decisiv validation and historical comparison
 
-## Pruebas
+- Ten supplied estimate PDFs (seven cases, eight byte-distinct documents) were read locally. All 40 operations and 100 operation line items were recovered, plus ten separate summary-only Shop Supplies records. Printed summary and operation aggregate reconcile in all ten files. One operation has neither part price nor printed Parts Total, so its itemized reconciliation is unavailable; no inferred price is stored.
+- The Pacific sample has 13 printed part codes and an extended amount exceeding the printed unit price by $125. The summary also prints Core of $125; this is preserved separately, not double counted or automatically allocated.
+- Case number, estimate version, updated timestamp and source SHA-256 are retained to support later deduplication; no actual historical ingestion or deduplication is implemented in this release.
+- Positive non-warranty miscellaneous charges are candidates for read-only historical comparison. Parts and labor are preserved but withheld from the current exact code/UOM comparison until their identity, unit and pricing basis are homologated. Generic operation codes are not unique labor service IDs. No historical records are created from these estimates.
+- No new dependency, SQL migration, or live DB access. Love's and FleetPerform source files are unchanged. The UI displays Decisiv operations separately and the final economic summary only once. Streamlit rendering and Supabase live integration still require local verification.
 
-La actualización pasó verificaciones de sintaxis y las pruebas unitarias locales del adaptador L10 y la selección de precios. No se ha ejecutado en tu despliegue real ni se ha conectado a tus credenciales de Supabase.
+## V3 — GWM Commercial Auto Glass (initial coverage)
+
+- Two actual one-page invoices, four detail rows, both totals reconciled with the header and detail. No real PDFs, extracted records or private metadata are included.
+- The new reader uses coordinates and the common model; no L10 dependency. It does not assume two rows. Tested with synthetic five-row invoice, multiline description, multiple service dates, quantity greater than one, large dollar amounts, missing price and mismatched totals. Ten regression tests passed in total; all 13 previously supplied Love's/Decisiv PDFs were also rerun with the same row counts and totals.
+- Positive, consistent recognized glass and installation lines are passed to `extract_candidates`: code is the complete printed Product/Service identifier, unit `EA` is a normalized per-product/per-service quantity (not printed UOM or hours), and price is the printed Unit Price. No invented manufacturer equivalence: preserve the distinct description; confirm catalog mapping before historical ingestion. New or unclassified items are retained but not automatically compared.
+- Service location is not treated as a verified physical vendor branch. No evidence of payment, no automatic historical inserts, and no estimates promoted into final invoices. Actual comparison requires validated matching invoice records and vendor/shop mapping in PostgreSQL; existing query/schema remain unchanged.
+- Initial coverage only: real multi-page invoices, different product/service types and tax/discount variants need validation. Pages without a repeated table heading are not guessed. Incomplete or discrepant monetary extraction blocks comparison.
+- Changed `core/invoice_router.py`, `invoice_display.py` (generic caption), `app.py` (price-basis caption includes normalized unit) and README. Added `readers/gwm.py` and `tests/test_gwm.py`. Other readers and SQL/pricing/storage files are byte-identical to V2. No dependency changes. Live Streamlit and Supabase were not tested.
