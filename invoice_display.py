@@ -11,17 +11,25 @@ def _display(value):
     return format(value, 'f') if isinstance(value, Decimal) else '' if value is None else value
 
 
+def _is_page_column(column):
+    label = ' '.join(str(column).casefold().replace('_', ' ').replace('-', ' ').split())
+    return label in {'page', 'pages', 'page number', 'page no', 'start page', 'end page',
+                     'pagina', 'página', 'paginas', 'páginas', 'numero de pagina', 'número de página'}
+
+
 def _frame(frame, max_height=720):
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         st.caption('No extracted rows in this section.')
         return
+    # Filter presentation only; the original frame and provenance remain intact.
+    frame = frame.loc[:, [not _is_page_column(c) for c in frame.columns]]
     st.dataframe(frame.reset_index(drop=True), hide_index=True, use_container_width=True,
                  height=min(max_height, 39 + 35 * len(frame)))
 
 
 def _rows(items):
     # Keep the reader's printed columns, not internal matching classifications.
-    return [{'Page': str(item.page) if item.page is not None else '', **{k: str(_display(v)) for k, v in item.printed.items()}}
+    return [{k: str(_display(v)) for k, v in item.printed.items() if not _is_page_column(k)}
             for item in items]
 
 
@@ -67,23 +75,22 @@ def _operation_frame(op, items):
     # Use the actual column name for totals. No subtotal is calculated here.
     columns = list(dict.fromkeys(k for row in rows for k in row))
     if not columns:
-        columns = ['Page', 'Description', 'Totals']
+        columns = ['Description', 'Totals']
     description = next((k for k in columns if k.casefold() == 'description'), None)
     total = next((k for k in columns if k.casefold() in ('totals', 'total', 'ext amt', 'extension', 'amount')), None)
     if description is None:
         description = 'Description'; columns.append(description)
     if total is None:
         total = 'Totals'; columns.append(total)
-    def closing(label, value, page=None):
-        return {**dict.fromkeys(columns, ''), 'Page': str(page) if page is not None else '',
-                description: label, total: _display(value)}
+    def closing(label, value):
+        return {**dict.fromkeys(columns, ''), description: label, total: _display(value)}
     if op.parts_total is not None:
         # Keep original line order and insert at the end of the parts section.
         last = max((n for n, item in enumerate(items) if item.category == 'Parts'), default=None)
         pos = last + 1 if last is not None else next((n for n, item in enumerate(items) if item.category == 'Misc'), len(rows))
         rows.insert(pos, closing('Parts Total', op.parts_total))
     rows.append(closing('Operation Total' if op.total is not None else 'Operation Total (not printed)',
-                        op.total, op.end_page))
+                        op.total))
     return pd.DataFrame(rows, columns=columns).fillna('')
 
 
@@ -128,7 +135,8 @@ def show_invoice_tables(doc):
                 if index:
                     st.divider()
                 st.markdown(f'**{op.number}. {op.title}**' + (' — WARRANTY' if op.warranty else ''))
-                st.caption(f'Pages {op.page}–{op.end_page}' + (f' · Operation code: {op.code}' if op.code else ''))
+                if op.code:
+                    st.caption(f'Operation code: {op.code}')
                 for label in ('complaint', 'cause', 'correction'):
                     _note(label.title(), op.notes.get(label))
                 items = [i for i in doc.items if i.operation == f'{op.number}. {op.title}']
@@ -138,7 +146,7 @@ def show_invoice_tables(doc):
         else:
             st.warning('No detail rows detected.')
         st.caption('Blank = not printed; zero = printed zero. Subtotals are not additional charges.')
-    # Keep the original L10 summary (labels, page and raw printed amounts).
+    # Keep the original L10 summary data; page columns are hidden by _frame.
     if doc.legacy_result is not None:
         summary = (doc.legacy_result.get('resumen_final') or {}).get('datos')
     else:
