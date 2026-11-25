@@ -77,7 +77,7 @@ def _operation_frame(op, items):
     if not columns:
         columns = ['Description', 'Totals']
     description = next((k for k in columns if k.casefold() == 'description'), None)
-    total = next((k for k in columns if k.casefold() in ('totals', 'total', 'ext amt', 'extension', 'amount', 'extd price')), None)
+    total = next((k for k in columns if k.casefold() in ('totals', 'total', 'ext amt', 'extension', 'amount', 'extd price', 'ext price')), None)
     if description is None:
         description = 'Description'; columns.append(description)
     if total is None:
@@ -89,7 +89,7 @@ def _operation_frame(op, items):
         last = max((n for n, item in enumerate(items) if item.category == 'Parts'), default=None)
         pos = last + 1 if last is not None else next((n for n, item in enumerate(items) if item.category == 'Misc'), len(rows))
         rows.insert(pos, closing('Parts Total', op.parts_total))
-    rows.append(closing('Operation Total' if op.total is not None else 'Operation Total (not printed)',
+    rows.append(closing(op.notes.get('total label', 'Operation Total') if op.total is not None else 'Operation Total (not printed)',
                         op.total))
     return pd.DataFrame(rows, columns=columns).fillna('')
 

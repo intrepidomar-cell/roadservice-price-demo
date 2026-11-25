@@ -10,6 +10,9 @@ from core.models import Invoice
 # Format identification is centralized and independent of extraction.
 # Add one signature and module path when a new layout is validated.
 SIGNATURES = {
+    'readers.towbook': (r"Candido.s Towing & Repair|B&W Wrecker Service|Stauffer.s Road Solutions", r'Invoice\s*#', r'Charge Description\s+Quantity\s+Price\s+Line Total', r'Towbook Management Software'),
+    'readers.bj_trailer': (r'B\.J\. Trailer & Truck Repair', r'DESCRIPTION\s+HRS/QTY\s+RATE/PRICE\s+AMOUNT'),
+    'readers.tom_nehl': (r'Customer Review|Invoice Total:', r'Fleet Boost', r'TOM NEHL TRUCK COMPANY', r'Task:\s*\d+'),
     'readers.gregorys': (r"GREGORY.S TRAILER AND", r"TRUCK SERVICE", r"Item\s+Description\s+Quantity\s+Rate\s+Amount"),
     'readers.ocala': (r"OCALA FREIGHTLINER", r"SERVICE (?:ORDER|INVOICE):", r"Sold Operations|Estimate Operations|Rejected Operations"),
     'readers.a_mobile_maintenance': (r'A Mobile Maintenance', r'Invoice\s*#', r'Quantity\s+Item Code\s+Description\s+Price Each\s+Amount'),
