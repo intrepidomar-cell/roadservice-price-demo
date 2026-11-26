@@ -33,7 +33,8 @@ def read(pdf, path=None):
         if pending is None: return
         cells, pn = pending
         q, code, desc, p, a = cells
-        qty, price, amount = map(decimal, (q,p,a))
+        taxable = bool(re.fullmatch(r'[\d,]+\.\d+T',a,re.I))
+        qty, price, amount = map(decimal, (q,p,a[:-1] if taxable else a))
         consistent = None if None in (qty,price,amount) else abs(qty*price-amount)<=TOL
         label = FEES.get(code.upper()) or FEES.get(desc.upper())
         if code.upper() == 'SERVICE CALL' and desc.lower().startswith('service location'):
@@ -46,7 +47,7 @@ def read(pdf, path=None):
                                   quantity=qty, unit='EA' if label else '', unit_price=price, amount=amount,
                                   price_source='printed Price Each' if price is not None else 'missing',
                                   comparison_eligible=eligible, amount_consistent=consistent,
-                                  printed=dict(zip(('Quantity','Item Code','Description','Price Each','Amount'),(qty,code,desc,price,amount)))))
+                                  printed=dict(zip(('Quantity','Item Code','Description','Price Each','Amount'),(qty,code,desc,price,amount))) | ({'Taxable marker':'T'} if taxable else {})))
         if consistent is not True: doc.warnings.append('Missing or inconsistent quantity, price or amount; review.')
         pending=None
     for pn,page in enumerate(pdf.pages,1):
@@ -66,6 +67,14 @@ def read(pdf, path=None):
                 value=decimal(m[1])
                 if key in doc.summary and doc.summary[key]!=value: doc.warnings.append('Conflicting '+key)
                 doc.summary[key]=value; doc.summary_pages[key]=pn
+        # Tax may be printed inside the table after the driver notes, not the footer.
+        for l in ls:
+            c=_row(l,page.width)
+            if re.match(r'^Sales Tax(?:\s*-|\s|$)',c[2],re.I) and re.fullmatch(r'\d+(?:\.\d+)?%',c[3]) and decimal(c[4]) is not None:
+                value=decimal(c[4])
+                if 'Sales Tax' in doc.summary and doc.summary['Sales Tax']!=value: doc.warnings.append('Conflicting Sales Tax')
+                doc.summary['Sales Tax']=value; doc.summary_pages['Sales Tax']=pn
+                doc.metadata['Sales tax label']=c[2]; doc.metadata['Sales tax rate']=c[3]
         if idx is None:
             doc.warnings.append(f'Page {pn}: detail header absent; continuation not validated.')
             continue

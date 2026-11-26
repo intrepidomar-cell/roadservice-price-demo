@@ -31,6 +31,10 @@ def read(pdf,path=None, *, vendor='Battleground Wrecker', reader='battleground_w
             if re.fullmatch(r'[A-Z0-9-]+',token,re.I) and any(ch.isdigit() for ch in token): code=token
         unit='EA' if code or name in {'stud','lug nut'} or (category=='Misc' and qty==1) else 'QT' if name=='oil (quart)' or (name in {'transmission fluid','power steering fluid'} and re.search(r'\bQTS?\b',details,re.I)) else 'GAL' if name=='washer fluid' and re.search(r'\bGALS?\b',details,re.I) else ''
         if towing:
+            if vendor.startswith('A1 Wrecker'):
+                if name.startswith('service call ('): category='Misc'; unit='EA' if qty==1 else ''
+                elif name.startswith('labor ('): category='Labor'
+                elif name=='parts': category='Parts'
             if name in {'trailer tandems','misc nuts, bolts, washers','brass fittings - misc'}: category='Parts'
             elif name=='labor': category='Labor'
             elif name=='tow (hourly)': category='Labor'; unit='HR'; code=''
@@ -38,14 +42,14 @@ def read(pdf,path=None, *, vendor='Battleground Wrecker', reader='battleground_w
             elif name in {'fuel surcharge','dollies','tow/hook fee','tram bar alignment'}: category='Misc'; unit='EA' if qty==1 else ''
         consistent=None if None in (qty,price,amount) else abs(qty*price-amount)<=TOL
         # Only an explicit item identifier or a single, named fee is eligible.
-        eligible=bool(name!='mileage - hd' and consistent is True and qty>0 and price>0 and amount>0 and ((code and unit) or (category=='Misc' and qty==1)))
+        eligible=bool(name!='mileage - hd' and consistent is True and qty>0 and price>0 and amount>0 and ((code and unit) or (category=='Misc' and qty==1)) and not vendor.startswith('A1 Wrecker'))
         doc.items.append(LineItem(desc,pn,category,code=code,quantity=qty,unit=unit,unit_price=price,amount=amount,
             price_source='printed Price' if price is not None else 'missing',comparison_eligible=eligible,amount_consistent=consistent,
             printed={'Charge Description':desc,'Details':details,'Quantity':qty,'Price':price,'Line Total':amount}))
         if consistent is not True: doc.warnings.append('Missing or inconsistent quantity, price or line total; review.')
         pending=None
     for pn,page in enumerate(pdf.pages,1):
-        ls=lines(page); idx=next((i for i,l in enumerate(ls) if l.text.casefold()==HEADER.casefold()),None)
+        ls=lines(page); idx=next((i for i,l in enumerate(ls) if l.text.replace('\x00','ti').casefold()==HEADER.casefold()),None)
         if pn==1 and idx is not None:
             header=ls[:idx]
             for l in header:
@@ -68,6 +72,12 @@ def read(pdf,path=None, *, vendor='Battleground Wrecker', reader='battleground_w
                         vals.append(' '.join(w['text'] for w in r.words if w['x0']>=page.width*.60))
                     doc.metadata['Service location']=' '.join(filter(None,vals)); break
             if towing:
+                if vendor.startswith('A1 Wrecker'):
+                    text=page.extract_text() or ''
+                    m=re.search(r'Invoice\s*#([\w-]+)',text,re.I)
+                    if m: doc.metadata['Invoice #']=m[1]
+                    m=re.search(r'Service Loca(?:ti|\x00)on\s+([^\n]+)',text,re.I)
+                    if m: doc.metadata['Service location']=m[1]
                 if len(header)>1:
                     address=' '.join(w['text'] for w in header[1].words if w['x0']<page.width*.75)
                     if address: doc.metadata['Vendor address']=address
@@ -107,7 +117,7 @@ def read(pdf,path=None, *, vendor='Battleground Wrecker', reader='battleground_w
             continue
         if summary_seen: doc.warnings.append('Detail header after final summary; review.')
         table_seen=True
-        anchors={w['text']:w for w in ls[idx].words}
+        anchors={w['text'].replace('\x00','ti'):w for w in ls[idx].words}
         q0=anchors['Quantity']['x0']-8; p1=anchors['Price']['x1']; t1=anchors['Total']['x1']
         for l in ls[idx+1:]:
             sm=SUMMARY.fullmatch(l.text)
