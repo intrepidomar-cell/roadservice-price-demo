@@ -4,7 +4,7 @@ from readers.battleground_wrecker import read as read_layout
 from core.models import Invoice
 from core.pdf_utils import lines
 
-VENDORS=("Candido's Towing & Repair", 'B&W Wrecker Service', "Stauffer's Road Solutions", "A1 Wrecker & Diesel Services LLC", "Arrow Towing, Inc.")
+VENDORS=("Candido's Towing & Repair", 'B&W Wrecker Service', "Stauffer's Road Solutions", "A1 Wrecker & Diesel Services LLC", "Arrow Towing, Inc.", "Bains Towing & Recovery, LLC.")
 
 def read(pdf,path=None):
     text=pdf.pages[0].extract_text() or ''
@@ -14,6 +14,13 @@ def read(pdf,path=None):
     doc=read_layout(pdf,path,vendor=matches[0],reader='towbook_v1')
     if matches[0]=='Arrow Towing, Inc.':
         _arrow_metadata(pdf.pages[0],doc)
+    if matches[0]=="Bains Towing & Recovery, LLC.":
+        m=re.search(r"Service Location\s+([^\n]+)",text,re.I)
+        if m: doc.metadata["Service location"]=m[1].strip()
+        for item in doc.items:
+            if item.description.casefold() in {"call out", "fuel surcharge"}:
+                item.category="Misc"; item.unit="EA" if item.quantity==1 else ""
+            item.comparison_eligible=False
     return doc
 
 

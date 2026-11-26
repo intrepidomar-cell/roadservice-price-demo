@@ -1,4 +1,4 @@
-# Road Service — Modular Readers V4.7
+# Road Service — Modular Readers V4.9
 
 Prototype for local PDF extraction and read-only same-vendor historical comparison. Public/cloud demo: **synthetic data only**. This archive contains source code and tests with fictitious data, not the uploaded work orders or their extracted contents.
 
@@ -130,3 +130,14 @@ This release is based directly on V4.2, not on the withdrawn OCR experiment. Add
 - Amoretti has its own reader because its complaint labels, administrative columns, pre-charge subtotal, summary-only shop supplies, additional charges, tax and balance structure differ from Fleet Repair Solutions. Call out fee and mileage appear in the repair detail and in the printed summary but are counted once. Shop supplies retain missing quantity and rate. No automatic historical candidates. The shared display has an Amoretti-only exception to keep printed additional charge rows visible with their rates.
 - Both real samples reconcile, 39 automated synthetic tests passed. Regression comparison against V4.7 produced identical normalized results on all 61 previously recognized mounted digital files (including copies); the previously unsupported scanned PDF also remains unchanged. One real sample per new vendor; no real multipage charge continuation verified. Live Streamlit and Supabase not tested. No OCR or comparison features added. No corporate documents, data exports, or credentials bundled.
 - Upgrade by merging the ZIP while preserving `.git`, `.venv`, `.streamlit`, `.env`; no dependencies changed.
+
+
+## Modular V4.9 — Baltimore, Bains, Atlantic Utility and Ascendance
+
+- Based on V4.8. Three new dedicated readers: `baltimore.py`, `atlantic_utility.py`, `ascendance.py`. Bains is registered in the existing Towbook wrapper; shared `battleground_wrecker.py` extraction remains unchanged. Atlantic's FleetPerform document uses the existing grid unchanged, with an explicit vendor identity and conservative comparison eligibility. No billing-channel selection, OCR, SQL or dependency changes.
+- Baltimore: three service orders, four unique jobs and 13 printed detail rows. Repeated job headers on consecutive pages attach to the same operation; preserve unpriced warranty rows and omit summary when not printed. Preserve dealer unit, fleet ID and owner reference independently; conflicting values flagged. The two priced orders reconcile. Storage is a single billed line as printed, not an inferred daily rate.
+- Atlantic Utility: direct estimate and FleetPerform estimate retain distinct source formats and document identifiers. Both reconcile. Matching VIN/amount alone is not a deduplication key: conflicting unit references require review. No historical matching or deduplication behavior added.
+- Ascendance: one service order, five jobs and six detail rows. Preserve Sold/Estimate status and warranty/customer-pay designation. Approved and Additional Estimates subtotals and totals remain separate, including printed zero totals; unpriced warranty details do not become zero. Printed per-status subtotals are displayed inside the job table; individual warranty-row reconciliation unavailable.
+- Bains: one Towbook invoice, three charges; service location is separate from remit address. Preserve printed quantity/rate, without assuming hourly basis for Road Service. All new items are initially excluded from automatic price comparison pending identity and price-basis review.
+- Seven real PDFs recognized; six printed monetary summaries reconcile and one warranty order has no economic summary. 44 automated synthetic tests passed. Full normalized extraction regression against the V4.8 ZIP: 65/65 previously recognized mounted digital files identical, including duplicate copies. No corporate PDF or extracted records bundled. UI tested through mock Streamlit tests, not a live browser; Supabase untested. Additional layouts and actual multi-page detail variants beyond the observed samples need validation.
+- Upgrade: merge ZIP while preserving `.git`, `.venv`, `.streamlit`, `.env`. No new dependencies. Review staged changes and never commit real PDFs or secrets.

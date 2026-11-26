@@ -77,7 +77,7 @@ def _operation_frame(op, items):
     if not columns:
         columns = ['Description', 'Totals']
     description = next((k for k in columns if k.casefold() == 'description'), None)
-    total = next((k for k in columns if k.casefold() in ('totals', 'total', 'ext amt', 'extension', 'amount', 'extd price', 'ext price')), None)
+    total = next((k for k in columns if k.casefold() in ('totals', 'total', 'ext amt', 'extension', 'extended', 'amount', 'extd price', 'ext price')), None)
     if description is None:
         description = 'Description'; columns.append(description)
     if total is None:
@@ -91,6 +91,10 @@ def _operation_frame(op, items):
         rows.insert(pos, closing('Parts Total', op.parts_total))
     rows.append(closing(op.notes.get('total label', 'Operation Total') if op.total is not None else 'Operation Total (not printed)',
                         op.total))
+    # Ascendance prints separate subtotals for each row status, even within one job.
+    for status in ('ESTIMATE', 'REJECTED'):
+        if status+' subtotal' in op.notes:
+            rows.append(closing(status.title()+' subtotal', op.notes[status+' subtotal']))
     return pd.DataFrame(rows, columns=columns).fillna('')
 
 

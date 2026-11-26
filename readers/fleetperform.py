@@ -20,6 +20,11 @@ def read(pdf,path=None):
         doc.metadata['Printed vendor']='FLEET REPAIR SOLNS-'
         m=re.search(r'^([A-Z ]+ [A-Z]{2},\s*\d{5}(?:-\d{4})?)\s+(?:PO|Reference|Phone)',first,re.M)
         if m: doc.metadata['Shop city/state/ZIP']=m[1]
+    if re.search(r'ATLANTIC UTILITY TRLR SLS',first,re.I):
+        doc.vendor='Atlantic Utility Trailer Sales'
+        doc.metadata['Printed vendor']='ATLANTIC UTILITY TRLR SLS'
+        m=re.search(r'^([A-Z ]+ [A-Z]{2},\s*\d{5}(?:-\d{4})?)\s+(?:PO|Reference|Phone)',first,re.M)
+        if m: doc.metadata['Shop city/state/ZIP']=m[1]
     if 'Estimate (Invoiced)' in first: doc.metadata['Document status']='Invoiced (estimate copy; not proof of payment)'
     else: doc.metadata['Document status']='Estimate'
     for label in ('Estimate #','Submit Date','Approve Date','PO #','Reference #','Vendor Inv #','Dealer Inv #','Unit Number','VIN','Make/Model'):
@@ -83,5 +88,7 @@ def read(pdf,path=None):
     keys=('Total Parts','Total Labor','Special Charges','Freight','Tax')
     check_delta(doc,'Printed economic summary',doc.summary.get('Estimate Total',doc.summary.get('Invoice Total')),sum((doc.summary[k] for k in keys),Decimal(0)) if all(k in doc.summary for k in keys) else None)
     if doc.warnings or any(v is None or abs(v)>TOL for v in doc.checks.values()):
+        for i in doc.items: i.comparison_eligible=False
+    if doc.vendor=="Atlantic Utility Trailer Sales":
         for i in doc.items: i.comparison_eligible=False
     return doc

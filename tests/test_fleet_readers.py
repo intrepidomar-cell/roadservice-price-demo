@@ -7,7 +7,7 @@ from readers.fleetperform import HEADER
 from test_invoice_display import view, assert_three_sections
 
 
-def make_fp(path, repeat):
+def make_fp(path, repeat, vendor="FleetPerform Synthetic Demo"):
     c=canvas.Canvas(str(path),pagesize=(595,842))
     xs=[25,50,76,150,325,397,435,475,520,570]
     def put(x,y,t):
@@ -18,7 +18,7 @@ def make_fp(path, repeat):
         for i in range(len(rows)+1): c.line(xs[0],842-y-i*h,xs[-1],842-y-i*h)
         for i,row in enumerate(rows):
             for x,t in zip(xs,row): put(x+2,y+i*h+13,t)
-    put(25,30,'FleetPerform Synthetic Demo'); put(400,45,'Estimate # : TEST1');put(400,60,'Approve Date :')
+    put(25,30,vendor); put(400,45,'Estimate # : TEST1');put(400,60,'Approve Date :')
     table([HEADER,['L','','123-456-789','Test labor','','3 (Units)','2.00','85.00','$510.00'],['P','','ABC123','Test part','','EA','2','5.00','$10.00']],180)
     c.showPage()
     table(([HEADER] if repeat else [])+[['P','','ABC456','Test other part','','EA','1','20.00','$20.00'],['M','','','SHOP SUPPLIES','','','1','10.00','$10.00']],40)
