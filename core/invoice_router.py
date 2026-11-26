@@ -10,10 +10,11 @@ from core.models import Invoice
 # Format identification is centralized and independent of extraction.
 # Add one signature and module path when a new layout is validated.
 SIGNATURES = {
+    'readers.amoretti': (r'Amoretti Diesel Repair and Service|Amoretti Diesel Repair and\s+(?:Invoice:.*\n\s*)?Service', r'Invoice:\s*\S+', r'Item\s+Description\s+Quantity\s+Rate\s+Amount', r'Complaint:'),
     'readers.albuquerque': (r'Albuquerque Freightliner', r'SERVICE ORDER:', r'STATUS\s+QTY\s+ITEM\s+DESCRIPTION\s+UNIT PRICE\s+EXTD PRICE'),
     'readers.affordable_diesel': (r'Affordable Diesel Repair, Inc\.', r'INVOICE #', r'ACTIVITY\s+QTY\s+RATE\s+AMOUNT'),
     'readers.texas_towing': (r'TEXAS TOWING WRECKER SERVICE INC\.', r'TOW INVOICE', r'TOW CHARGE DESCRIPTION\s+QTY\s+RATE\s+AMOUNT'),
-    'readers.towbook': (r"Candido.s Towing & Repair|B&W Wrecker Service|Stauffer.s Road Solutions|A1 Wrecker & Diesel Services LLC", r'Invoice\s*#', r'Charge Descrip(?:ti|\x00)on\s+Quan(?:ti|\x00)ty\s+Price\s+Line Total', r'Towbook Management Software'),
+    'readers.towbook': (r"Candido.s Towing & Repair|B&W Wrecker Service|Stauffer.s Road Solutions|A1 Wrecker & Diesel Services LLC|Arrow Towing, Inc\.", r'Invoice\s*#', r'Charge Descrip(?:ti|\x00)on\s+Quan(?:ti|\x00)ty\s+Price\s+Line Total', r'Towbook Management Software'),
     'readers.bj_trailer': (r'B\.J\. Trailer & Truck Repair', r'DESCRIPTION\s+HRS/QTY\s+RATE/PRICE\s+AMOUNT'),
     'readers.tom_nehl': (r'Customer Review|Invoice Total:', r'Fleet Boost', r'TOM NEHL TRUCK COMPANY', r'Task:\s*\d+'),
     'readers.gregorys': (r"GREGORY.S TRAILER AND", r"TRUCK SERVICE", r"Item\s+Description\s+Quantity\s+Rate\s+Amount"),

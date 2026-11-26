@@ -152,7 +152,7 @@ def show_invoice_tables(doc):
                     st.caption(op.notes['economic breakdown'])
             # Standalone charges not already present in the printed summary.
             summary_labels = {k.casefold().strip() for k in doc.summary}
-            standalone = [i for i in doc.items if not i.operation and (doc.reader == 'gregorys_v1' or i.description.casefold().strip() not in summary_labels)]
+            standalone = [i for i in doc.items if not i.operation and (doc.reader == 'gregorys_v1' or (doc.reader == 'amoretti_v1' and i.price_source != 'printed summary Amount') or i.description.casefold().strip() not in summary_labels)]
             if standalone:
                 st.divider()
                 st.markdown('**Additional charges**')
